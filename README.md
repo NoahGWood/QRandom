@@ -5,6 +5,8 @@ Right now the project is in its' infancy.
 
 # WARNING: THIS PROGRAM SHOULD NOT BE CONSIDERED CRYPTOGRAPHICALLY RANDOM UNLESS CONNECTED TO A REAL QUANTUM PROCESSOR
 
+# Installation
+pip install qrandom-NoahGWood
 
 ## This is a basic example of how to use QRandom
 
