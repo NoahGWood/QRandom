@@ -1,5 +1,4 @@
 import os
-import socket
 
 def start_servers():
     try:

@@ -1,6 +1,23 @@
 # This is a basic example of how to use QRandom
 
-from qrandom import QRandom
+# You can import everything
+from qrandom import *
 
+# or just the QRandom module if you'd like to instantiate it yourself
+# from qrandom import Qrandom
 x = QRandom()
-print(x.randint(0,10))
+
+# generate a random float between 0 and 1:
+print(random())
+print(x.random())
+
+# generate a random integer in range
+print(randrange(0, 5))
+print(x.randrange(0, 5))
+
+# Generate a random number n bits long, defaults to integer output
+print(getrandbits(8))
+print(x.getrandbits(8))
+# You can also get the number in byte format
+print(getrandbits(8, x="bytes"))
+

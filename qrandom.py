@@ -1,78 +1,98 @@
-from pyquil import *
-from pyquil.gates import *
-from math import log as _log, exp as _exp, pi as _pi, e as _e, ceil as _ceil
-from math import sqrt as _sqrt, acos as _acos, cos as _cos, sin as _sin
+"""Random variable generator using quantum machines
+"""
+
+from math import sqrt as _sqrt
 import random
-import vm
 import psutil
+from pyquil.quil import Program
+from pyquil.api import get_qc
+from pyquil.gates import H, CNOT
+import vm
+
+__all__ = ["QRandom", "random", "randint", "randrange", "getstate", "setstate", "getrandbits"]
 
 BPF = 53        # Number of bits in a float
 RECIP_BPF = 2**-BPF
 
-class QRandom(random.Random):
+def bell_state():
+    """Returns the Program object of a bell state operation on a quantum computer
+    """
+    return Program(H(0), CNOT(0, 1))
 
-    def __init__(self):
-        self.p = self._bell_state()
-        self.qc = self.qvm()
-        self.gauss_next = None
+def arr_to_int(arr):
+    """returns an integer from an array of binary numbers
+    arr = [1 0 1 0 1 0 1] || [1,0,1,0,1,0,1]
+    """
+    return int(''.join([str(i) for i in arr]), 2)
 
-        # Make sure we can connect to the servers
-        while True:
+def arr_to_bits(arr):
+    return ''.join([str(i) for i in arr])
+
+def int_to_bytes(k, x=64):
+    """returns a bytes object of the integer k with x bytes"""
+    #return bytes(k,x)
+    return bytes(''.join(str(1 & int(k) >> i) for i in range(x)[::-1]), 'utf-8')
+
+def bits_to_bytes(k):
+    """returns a bytes object of the bitstring k"""
+    return int(k, 2).to_bytes((len(k) + 7) // 8, 'big')
+
+def qvm():
+    """Returns the quantum computer or virtual machine"""
+    return get_qc('9q-square-qvm')
+
+def test_quantum_connection():
+    """
+    Tests the connection to the quantum virtual machine.
+    attempts to start the virtual machine if possible
+    """
+    while True:
+        qvm_running = False
+        quilc_running = False
+        for proc in psutil.process_iter():
+            if 'qvm' in proc.name().lower():
+                qvm_running = True
+            elif 'quilc' in proc.name().lower():
+                quilc_running = True
+        if qvm_running is False or quilc_running is False:
             try:
-                if self.__test_quantum_connection__() == False:
-                    vm.start_servers()
-                else:
-                    break
+                vm.start_servers()
             except Exception as e:
                 raise Exception(e)
-    def __test_quantum_connection__(self):
-        while True:
-            qvm = False
-            quilc = False
-            for proc in psutil.process_iter():
-                if 'qvm' in proc.name().lower():
-                    qvm = True
-                elif 'quilc' in proc.name().lower():
-                    quilc = True
-            if qvm == False or quilc == False:
-                vm.start_servers()
-            else:
-                break
-    
-    def _bell_state(self):
-        return Program(H(0), CNOT(0,1))
+        else:
+            break
 
-    def __arr_to_int__(self, arr):
-        return int(''.join([str(i) for i in arr]), 2)
+class QRandom(random.Random):
+    """Quantum random number generator
 
-    def __arr_to_bits__(self, arr):
-        return ''.join([str(i) for i in arr])
-    
-    def __int_to_bytes__(self, k, x=64):
-        """returns a bytes object of the integer k with x bytes"""
-        #return bytes(k,x)
-        return bytes(''.join(str(1 & int(k) >> i) for i in range(x)[::-1]), 'utf-8')
+        Generates a random number by collapsing bell states on a
+        quantum computer or quantum virtual machine.
+    """
 
-    def __bits_to_bytes__(self, k):
-        """returns a bytes object of the bitstring k"""
-        return int(k, 2).to_bytes((len(k) + 7) // 8, 'big')
-    
-    def qvm(self):
-        return get_qc('9q-square-qvm')
+    def __init__(self):
+        super().__init__(self)
+        self.p = bell_state()
+        self.qc = qvm()
+        # Make sure we can connect to the servers
+        test_quantum_connection()
 
     def random(self):
         """Get the next random number in the range [0.0, 1.0)."""
-        x = self.getrandbits(56)
-        return (int.from_bytes(self.__bits_to_bytes__(str(x)), 'big') >> 3) * RECIP_BPF
+        return (int.from_bytes(self.getrandbits(56, 'bytes'), 'big') >> 3) * RECIP_BPF
 
-    def getrandbits(self, k):
+    def getrandbits(self, k, x="int"):
+        """getrandbits(k) -> x. generates an integer with k random bits"""
         if k <= 0:
             raise ValueError("Number of bits should be greater than 0")
         if k != int(k):
             raise ValueError("Number of bits should be an integer")
-#        print(self.qc.run_and_measure(self.p,trials=k))
-        n = int(self.__arr_to_bits__(self.qc.run_and_measure(self.p,trials=k)[0]))
-        return n
+        out = bits_to_bytes(arr_to_bits(self.qc.run_and_measure(self.p, trials=k)[0]))
+        if x in ('int', 'INT'):
+            return int.from_bytes(out, 'big')
+        elif x in ('bytes', 'b'):
+            return out
+        else:
+            raise ValueError(str(x) + ' not a valid type (int, bytes)')
 
 def _test_generator(n, func, args):
     import time
@@ -89,61 +109,30 @@ def _test_generator(n, func, args):
         smallest = min(x, smallest)
         largest = max(x, largest)
     t1 = time.time()
-    print(round(t1-t0, 3), 'sec,', end=' ')
+    print(round(t1 - t0, 3), 'sec,', end=' ')
     avg = total/n
-    stddev = _sqrt(sqsum/n - avg*avg)
+    stddev = _sqrt(sqsum / n - avg*avg)
     print('avg %g, stddev %g, min %g, max %g\n' % \
               (avg, stddev, smallest, largest))
 
 
 def _test(N=2000):
     _test_generator(N, random, ())
-    _test_generator(N, normalvariate, (0.0, 1.0))
-    _test_generator(N, lognormvariate, (0.0, 1.0))
-    _test_generator(N, vonmisesvariate, (0.0, 1.0))
-    _test_generator(N, gammavariate, (0.01, 1.0))
-    _test_generator(N, gammavariate, (0.1, 1.0))
-    _test_generator(N, gammavariate, (0.1, 2.0))
-    _test_generator(N, gammavariate, (0.5, 1.0))
-    _test_generator(N, gammavariate, (0.9, 1.0))
-    _test_generator(N, gammavariate, (1.0, 1.0))
-    _test_generator(N, gammavariate, (2.0, 1.0))
-    _test_generator(N, gammavariate, (20.0, 1.0))
-    _test_generator(N, gammavariate, (200.0, 1.0))
-    _test_generator(N, gauss, (0.0, 1.0))
-    _test_generator(N, betavariate, (3.0, 3.0))
-    _test_generator(N, triangular, (0.0, 1.0, 1.0/3.0))
-
+    _test_generator(N, getrandbits, ([512]))
 # Create one instance, seeded from current time, and export its methods
 # as module-level functions.  The functions share state across all uses
 #(both in the user's code and in the Python libraries), but that's fine
 # for most programs and is easier for the casual user than making them
-# instantiate their own Random() instance.
+# instantiate their own QRandom() instance.
 
 _inst = QRandom()
-seed = _inst.seed
+#seed = _inst.seed
 random = _inst.random
-uniform = _inst.uniform
-triangular = _inst.triangular
 randint = _inst.randint
-choice = _inst.choice
 randrange = _inst.randrange
-sample = _inst.sample
-shuffle = _inst.shuffle
-choices = _inst.choices
-normalvariate = _inst.normalvariate
-lognormvariate = _inst.lognormvariate
-expovariate = _inst.expovariate
-vonmisesvariate = _inst.vonmisesvariate
-gammavariate = _inst.gammavariate
-gauss = _inst.gauss
-betavariate = _inst.betavariate
-paretovariate = _inst.paretovariate
-weibullvariate = _inst.weibullvariate
 getstate = _inst.getstate
 setstate = _inst.setstate
 getrandbits = _inst.getrandbits
 
 if __name__ == '__main__':
-    _test(2000)
-
+    _test(1)
